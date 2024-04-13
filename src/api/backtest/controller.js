@@ -3,7 +3,7 @@ import moment from 'moment';
 import _ from 'lodash';
 import { Algorithm } from '../algorithm/model.js';
 import { Symbols } from '../symbol/model.js';
-import { checkResult, mainFuncForBacktest } from '../../services/algo/backtest/index.js';
+import { checkResult, mainFuncForBacktest, outputBacktestSchema } from '../../services/algo/backtest/index.js';
 import logger from '../../services/logger/index.js';
 
 
@@ -45,10 +45,12 @@ export const actions = {
                 timeframe: createBacktest.inputData.timeframe,
                 symbol: symbolToUse,
                 algorithm: algorithmToUse
-            }))
+            }, 100))
                 .then(async result => {
-                    logger.debug({ backtestResult: result })
-                    const calculateOutcome = await checkResult(result);
+                    logger.info({ backtestResult: result })
+                    const resultValidate = outputBacktestSchema.validate(result);
+                    if (resultValidate.error) throw new Error('Invalid output schema');
+                    const calculateOutcome = await checkResult(resultValidate, symbolToUse.symbolPair);
                     await Backtest.findByIdAndUpdate(createBacktest._id, {
                         status: 'completed',
                         statusMessage: null,
