@@ -26,8 +26,9 @@ export const actions = {
     },
     createBacktest: async function({ params, body }, res) {
         try {
-            const dateFrom = moment(body.dateFrom);
-            const dateTo = moment(body.dateTo);
+            const dateFrom = moment(body.dateFrom).tz('UTC');
+            const dateTo = moment(body.dateTo).tz('UTC');
+            logger.debug({ dateFrom, dateTo })
             if (!dateFrom.isValid() || !dateTo.isValid()) return res.status(400).send({ message: 'Invalid date format' });
             if (dateFrom.isAfter(dateTo)) return res.status(400).send({ message: 'dateFrom must be before dateTo' });
             if (dateFrom.isAfter(moment())) return res.status(400).send({ message: 'dateFrom must be in the past' });
@@ -45,9 +46,10 @@ export const actions = {
                 timeframe: createBacktest.inputData.timeframe,
                 symbol: symbolToUse,
                 algorithm: algorithmToUse
-            }, 100))
+            }, 200))
                 .then(async result => {
-                    logger.info({ backtestResult: result })
+                    if (result.length === 0) throw new Error('No data fetched');
+                    logger.debug({ backtestResult: result })
                     const resultValidate = outputBacktestSchema.validate(result);
                     if (resultValidate.error) throw new Error('Invalid output schema');
                     const calculateOutcome = await checkResult(resultValidate, symbolToUse.symbolPair);

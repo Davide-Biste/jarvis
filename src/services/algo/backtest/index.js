@@ -10,10 +10,12 @@ import _ from 'lodash';
 export const mainFuncForBacktest = async function(data, limit) {
     const { dateFrom, dateTo, timeframe, symbol, algorithm } = data;
 
-    const start = moment(dateFrom);
-    const end = moment(dateTo);
+    // Calcola il backtest da a
+    const start = moment(dateFrom).tz('UTC');
+    const end = moment(dateTo).tz('UTC');
 
     const range = await calculateRangeBasedByTimeframe(start, end, timeframe);
+    console.log({ range })
 
     if (range.length === 0) {
         throw new Error('Invalid date range');
@@ -21,17 +23,27 @@ export const mainFuncForBacktest = async function(data, limit) {
 
     const results = [];
     const exchange = new ccxt.currencycom();
-    for (const date of range) {
+    for (let currentDate of range) {
         try {
-            const fetchedData = await fetchCandlesBeforeDate(exchange, symbol.symbolPair, timeframe, new Date(date), limit);
+            currentDate = currentDate.tz('UTC');
+            logger.debug(`Current date: ${currentDate.format('YYYY-MM-DD HH:mm')}`);
+            const fetchedData = await fetchCandlesBeforeDate(exchange, symbol.symbolPair, timeframe, currentDate, limit);
+            logger.debug(`Fetched data for ${currentDate.format('YYYY-MM-DD HH:mm')}: ${fetchedData.length} candles`)
+            logger.debug(`First candle: ${moment(fetchedData[0][0]).tz('Europe/Rome').format('YYYY-MM-DD HH:mm')}`)
+            logger.debug(`Last candle: ${moment(fetchedData[fetchedData.length - 1][0]).tz('Europe/Rome').format('YYYY-MM-DD HH:mm')}`)
+            const lastDate = moment(fetchedData[fetchedData.length - 1][0]).tz('UTC');
+            if (!lastDate.isSame(currentDate)) {
+                logger.debug(`Current Date: ${currentDate}, Fetched date: ${lastDate}`)
+                throw Error('Calculated date does not match the fetched data')
+            }
             const result = await executeAlgo(fetchedData, algorithm);
             results.push({
-                date: moment(fetchedData[fetchedData.length - 1][0]).format('YYYY-MM-DD HH:mm'),
+                date: currentDate.format('YYYY-MM-DD HH:mm'),
                 result,
             });
         } catch (e) {
             logger.error(`Error during market price retrieval or algorithm execution: ${e}`);
-            throw e;
+            return [];
         }
     }
     return results;
@@ -44,30 +56,32 @@ export const checkResult = async function(data, symbol) {
         //check the valid trade if have win position or not
         const res = await checkTradeOutcomes(onlyOpenPositions, symbol);
         console.log({ res })
+        let win = 0;
+        let loss = 0;
+        let pips = 0;
+        for (const trade of res) {
+            if (trade.outcome === 'Profit') {
+                win++;
+            } else if (trade.outcome === 'Loss') {
+                loss++;
+            }
+            pips += parseInt(trade.pips);
+        }
+        console.log({ win, loss, pips })
 
-        // if (onlyOpenPositions.length === 0) {
-        //     return {
-        //         totalTrades: 0,
-        //         percentageWinningTrades: 0,
-        //         percentageLosingTrades: 0,
-        //         profitFactor: 0,
-        //         expectedPayoff: 0
-        //     }
-        // }
-        // const totalTrades = onlyOpenPositions.length;
-        // const winningTrades = onlyOpenPositions.filter(trade => trade.result === 'win').length;
-        // const losingTrades = onlyOpenPositions.filter(trade => trade.result === 'loss').length;
-        // const percentageWinningTrades = (winningTrades / totalTrades) * 100;
-        // const percentageLosingTrades = (losingTrades / totalTrades) * 100;
-        // const profitFactor = winningTrades / losingTrades;
-        // const expectedPayoff = (percentageWinningTrades * profitFactor) - (percentageLosingTrades);
-        // return {
-        //     totalTrades,
-        //     percentageWinningTrades,
-        //     percentageLosingTrades,
-        //     profitFactor,
-        //     expectedPayoff
-        // };
+        const percentageWinningTrades = (win / (win + loss)) * 100;
+        const percentageLosingTrades = (loss / (win + loss)) * 100;
+        const totalTrades = win + loss;
+        const profitFactor = win / loss;
+        return {
+            percentageWinningTrades,
+            percentageLosingTrades,
+            totalTrades,
+            profitFactor,
+            pips,
+            win,
+            loss
+        }
     } catch (e) {
         throw new Error(e);
     }
@@ -90,13 +104,13 @@ export const outputBacktestSchema = Joi.array().items(Joi.object({
 const calculateRangeBasedByTimeframe = async (dateFrom, dateTo, timeframe) => {
     try {
         const range = [];
-        let currentDate = moment(dateFrom).tz('Europe/Rome'); // Assicurati che sia un clone se dateFrom è un oggetto Moment
+        let currentDate = moment(dateFrom).tz('UTC');
         const minutesToAdd = extractCorrectTimeframe(timeframe);
         while (currentDate.isBefore(dateTo)) {
             if (isTradingTime(currentDate)) {
-                range.push(moment(currentDate)); // Clona l'oggetto data prima di pusharlo
+                range.push(moment(currentDate));
             }
-            currentDate.add(minutesToAdd, 'minutes'); // Moment modifica l'oggetto "in place"
+            currentDate.add(minutesToAdd, 'minutes');
         }
         return range;
     } catch (e) {
@@ -128,16 +142,20 @@ const extractCorrectTimeframe = (timeframe) => {
     }
 }
 
-const isTradingTime = (date) => {
-    // Converti la data in timezone italiana 'Europe/Rome'
-    const romeDate = date.tz('Europe/Rome');
-    const dayOfWeek = romeDate.day();
-    const hour = romeDate.hour();
+const isTradingTime = (utcDate) => {
+    // Controlla che la data fornita sia un oggetto moment UTC
+    if (!moment.isMoment(utcDate) || !utcDate.isUTC()) {
+        throw new Error('The date must be a moment.js object in UTC');
+    }
 
-    // Controlla se è fuori dall'orario di trading
-    if (dayOfWeek === 0 && hour < 23) return false; // Domenica prima delle 23:00
-    if (dayOfWeek === 5 && hour >= 23) return false; // Venerdì dopo le 23:00
+    const dayOfWeek = utcDate.day(); // 0 è Domenica, 6 è Sabato
+    const hour = utcDate.hour();
+
+    // Controlla se è fuori dall'orario di trading UTC
+    // Forex Trading è chiuso da Venerdì 22:00 UTC a Domenica 22:00 UTC
     if (dayOfWeek === 6) return false; // Sabato tutto il giorno
+    if (dayOfWeek === 5 && hour >= 22) return false; // Venerdì dopo le 22:00 UTC
+    if (dayOfWeek === 0 && hour < 22) return false; // Domenica prima delle 22:00 UTC
 
     return true;
 };
@@ -167,38 +185,59 @@ async function checkTradeOutcomes(trades, symbol) {
         const { date, result } = trade;
         if (!result) continue;
 
-        const { entryPrice, stopLoss, takeProfit } = result;
-        const since = new Date(date).getTime() + 60000;
+        const { entryPrice, stopLoss, takeProfit, action } = result;
+        const since = moment(date).add(1, 'minute').toDate().getTime();
 
         try {
             const ohlcv = await fetchAllOHLCV(exchange, symbol, '1m', since);
+            // for (let i = 0; i < ohlcv.length; i++) {
+            //     console.log({ ohlcv: moment(ohlcv[i][0]).utc().format('YYYY-MM-DD HH:mm') })
+            // }
             let outcome = 'No Outcome';
-            let outcomeTime = null;
+            let outcomeDate = null;
+            let closePrice = null;
             let pips = 0;
-            console.log({ ohlcv: ohlcv[0] })
-            console.log({ entryPrice, stopLoss, takeProfit })
             for (const [time, open, high, low, close, volume] of ohlcv) {
-                if (high >= takeProfit) {
+                if (action === 'Buy' && high >= takeProfit) {
                     outcome = 'Profit';
-                    outcomeTime = new Date(time).toISOString();
-                    pips = result.action === 'Buy' ? (takeProfit - entryPrice) * 10000 : (entryPrice - takeProfit) * 10000;
+                    outcomeDate = new Date(time).toISOString();
+                    closePrice = takeProfit;
+                    pips = (takeProfit - entryPrice) * 10000;
                     break;
-                } else if (low <= stopLoss) {
+                } else if (action === 'Buy' && low <= stopLoss) {
                     outcome = 'Loss';
-                    outcomeTime = new Date(time).toISOString();
-                    pips = result.action === 'Buy' ? (entryPrice - stopLoss) * 10000 : (stopLoss - entryPrice) * 10000;
+                    outcomeDate = new Date(time).toISOString();
+                    closePrice = stopLoss;
+                    pips = -(entryPrice - stopLoss) * 10000;
+                    break;
+                } else if (action === 'Sell' && low <= takeProfit) {
+                    outcome = 'Profit';
+                    outcomeDate = new Date(time).toISOString();
+                    closePrice = takeProfit;
+                    pips = (entryPrice - takeProfit) * 10000;
+                    break;
+                } else if (action === 'Sell' && high >= stopLoss) {
+                    outcome = 'Loss';
+                    outcomeDate = new Date(time).toISOString();
+                    closePrice = stopLoss;
+                    pips = -(stopLoss - entryPrice) * 10000;
                     break;
                 }
             }
 
             results.push({
-                enterDate: new Date(date).toISOString(),
+                action,
                 outcome,
-                outcomeTime,
-                pips: outcome === 'No Outcome' ? null : pips.toFixed(2), // Limita la precisione a 2 decimali per i pips
+                enterDate: moment(date).utc().format('YYYY-MM-DD HH:mm'),
+                outcomeDate: moment(outcomeDate).utc().format('YYYY-MM-DD HH:mm'),
+                entryPrice,
+                closePrice,
+                stopLoss,
+                takeProfit,
+                pips: outcome === 'No Outcome' ? null : pips.toFixed(2),
                 details: outcome === 'No Outcome'
                     ? 'Neither stop loss nor take profit was reached within the available data.'
-                    : `The trade reached ${outcome} at ${outcomeTime} resulting in ${pips.toFixed(2)} pips.`
+                    : `The trade reached ${outcome} at ${outcomeDate} with a close price of ${closePrice}, resulting in ${pips.toFixed(2)} pips.`
             });
         } catch (error) {
             console.error(`Error fetching data for ${date}: ${error.message}`);
