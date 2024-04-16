@@ -26,5 +26,5 @@ app.use(express.urlencoded({extended: false}));
 app.use(api);
 
 app.listen(process.env.PORT || 3000, () => {
-    console.log("Board Game Counter Server started on Port: " + process.env.PORT || 3000);
+    console.log("Jarvis started on Port: " + process.env.PORT || 3000);
 });

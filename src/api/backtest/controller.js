@@ -26,8 +26,8 @@ export const actions = {
     },
     createBacktest: async function({ params, body }, res) {
         try {
-            const dateFrom = moment(body.dateFrom).tz('UTC');
-            const dateTo = moment(body.dateTo).tz('UTC');
+            const dateFrom = moment(body.dateFrom).utc();
+            const dateTo = moment(body.dateTo).utc();
             logger.debug({ dateFrom, dateTo })
             if (!dateFrom.isValid() || !dateTo.isValid()) return res.status(400).send({ message: 'Invalid date format' });
             if (dateFrom.isAfter(dateTo)) return res.status(400).send({ message: 'dateFrom must be before dateTo' });
@@ -45,14 +45,17 @@ export const actions = {
                 dateTo: createBacktest.inputData.dateTo,
                 timeframe: createBacktest.inputData.timeframe,
                 symbol: symbolToUse,
-                algorithm: algorithmToUse
+                algorithm: algorithmToUse,
+                candlePeriods: body.candlePeriods,
             }, 200))
                 .then(async result => {
                     if (result.length === 0) throw new Error('No data fetched');
                     logger.debug({ backtestResult: result })
-                    const resultValidate = outputBacktestSchema.validate(result);
-                    if (resultValidate.error) throw new Error('Invalid output schema');
-                    const calculateOutcome = await checkResult(resultValidate, symbolToUse.symbolPair);
+                    // const resultValidate = outputBacktestSchema.validate(result);
+                    // if (resultValidate.error) throw new Error('Invalid output schema');
+                    //TODO: riabilitare controllo schema
+                    //TODO: aggiungere calcolo dei margindays (da capire se ha senso)
+                    const calculateOutcome = await checkResult(result, symbolToUse, body.candlePeriods, dateFrom, dateTo, 3);
                     await Backtest.findByIdAndUpdate(createBacktest._id, {
                         status: 'completed',
                         statusMessage: null,
