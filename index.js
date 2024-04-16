@@ -6,8 +6,6 @@ import api from "./src/api/index.js";
 import mongooseConnection from "./src/services/db/mongoose.js";
 import bodyParser from "body-parser";
 import {initPassportStrategies} from "./src/services/strategies/index.js";
-import agenda from "./src/services/agenda/index.js";
-
 
 await mongooseConnection();
 await initPassportStrategies();
@@ -28,5 +26,5 @@ app.use(express.urlencoded({extended: false}));
 app.use(api);
 
 app.listen(process.env.PORT || 3000, () => {
-    console.log("Board Game Counter Server started on Port: " + process.env.PORT || 3000);
+    console.log("Jarvis started on Port: " + process.env.PORT || 3000);
 });

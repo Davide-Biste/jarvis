@@ -15,7 +15,7 @@ export const fetchCandlesBeforeDate = async (exchange, symbol, timeframe, endDat
         throw new Error(`Il metodo fetchOHLCV non è supportato dall'exchange ${exchange.id}`);
     }
     // Converti la data di fine in un timestamp
-    const endTimestamp = endDate.getTime();
+    const endTimestamp = moment(endDate).valueOf();
 
     // Calcola il timestamp di partenza sottraendo il numero di millisecondi corrispondente alle candele richieste
     // Nota: il valore di una candela (in millisecondi) dipende dal timeframe che utilizzi
@@ -24,9 +24,17 @@ export const fetchCandlesBeforeDate = async (exchange, symbol, timeframe, endDat
 
     try {
         // Fetch the OHLCV data
-        logger.debug({ symbol, timeframe, startTimestamp, limit })
+        logger.debug({
+            symbol,
+            timeframe,
+            startTimestamp: moment(startTimestamp).format('YYYY-MM-DD HH:mm:ss'),
+            endTimestamp: moment(endTimestamp).format('YYYY-MM-DD HH:mm:ss'),
+            limit
+        })
+        console.log({ symbol, timeframe, startTimestamp, limit })
         const ohlcv = await exchange.fetchOHLCV(symbol, timeframe, startTimestamp, limit);
-        logger.debug({ ohlcv })
+        console.log({ ohlcv })
+        logger.debug({ primoTimestamp: ohlcv[0][0] })
         if (ohlcv.length > 0 && ohlcv[ohlcv.length - 1][0] <= endTimestamp) {
             return ohlcv;
         }

@@ -3,7 +3,7 @@ import moment from 'moment';
 import _ from 'lodash';
 import { Algorithm } from '../algorithm/model.js';
 import { Symbols } from '../symbol/model.js';
-import { checkResult, mainFuncForBacktest } from '../../services/algo/backtest/index.js';
+import { checkResult, mainFuncForBacktest, outputBacktestSchema } from '../../services/algo/backtest/index.js';
 import logger from '../../services/logger/index.js';
 
 
@@ -26,8 +26,9 @@ export const actions = {
     },
     createBacktest: async function({ params, body }, res) {
         try {
-            const dateFrom = moment(body.dateFrom);
-            const dateTo = moment(body.dateTo);
+            const dateFrom = moment(body.dateFrom).utc();
+            const dateTo = moment(body.dateTo).utc();
+            logger.debug({ dateFrom, dateTo })
             if (!dateFrom.isValid() || !dateTo.isValid()) return res.status(400).send({ message: 'Invalid date format' });
             if (dateFrom.isAfter(dateTo)) return res.status(400).send({ message: 'dateFrom must be before dateTo' });
             if (dateFrom.isAfter(moment())) return res.status(400).send({ message: 'dateFrom must be in the past' });
@@ -44,11 +45,17 @@ export const actions = {
                 dateTo: createBacktest.inputData.dateTo,
                 timeframe: createBacktest.inputData.timeframe,
                 symbol: symbolToUse,
-                algorithm: algorithmToUse
-            }))
+                algorithm: algorithmToUse,
+                candlePeriods: body.candlePeriods,
+            }, 200))
                 .then(async result => {
+                    if (result.length === 0) throw new Error('No data fetched');
                     logger.debug({ backtestResult: result })
-                    const calculateOutcome = await checkResult(result);
+                    // const resultValidate = outputBacktestSchema.validate(result);
+                    // if (resultValidate.error) throw new Error('Invalid output schema');
+                    //TODO: riabilitare controllo schema
+                    //TODO: aggiungere calcolo dei margindays (da capire se ha senso)
+                    const calculateOutcome = await checkResult(result, symbolToUse, body.candlePeriods, dateFrom, dateTo, 3);
                     await Backtest.findByIdAndUpdate(createBacktest._id, {
                         status: 'completed',
                         statusMessage: null,

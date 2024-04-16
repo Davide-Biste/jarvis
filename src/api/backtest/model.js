@@ -41,10 +41,18 @@ const resultSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
-    expectedPayoff: {
+    pips: {
         type: Number,
         required: true
     },
+    win: {
+        type: Number,
+        required: true
+    },
+    loss: {
+        type: Number,
+        required: true
+    }
 });
 
 const backtestSchema = new mongoose.Schema({
