@@ -8,7 +8,7 @@ import _ from 'lodash';
 import { getHistoricalRates } from 'dukascopy-node';
 
 
-export const mainFuncForBacktest = async function(data, limit) {
+export const mainFuncForBacktest = async function(data) {
     const { dateFrom, dateTo, timeframe, symbol, algorithm, candlePeriods } = data;
     // Recupera i dati storici con il buffer
     const historicalData = await getHistoricalRatesWithBuffer(symbol, dateFrom, dateTo, timeframe, 'json');
@@ -46,6 +46,7 @@ export const checkResult = async function(data, symbol, candlePeriods, dateFrom,
         const res = await checkTradeOutcomes(onlyOpenPositions, symbol, dateFrom, dateTo, marginDays);
         if (res.length === 0) {
             return {
+                positions: [],
                 candlePeriods,
                 percentageWinningTrades: 0,
                 percentageLosingTrades: 0,
@@ -77,6 +78,7 @@ export const checkResult = async function(data, symbol, candlePeriods, dateFrom,
         const totalTrades = win + loss;
         const profitFactor = win / loss;
         return {
+            positions: onlyOpenPositions,
             candlePeriods,
             percentageWinningTrades,
             percentageLosingTrades,
@@ -91,61 +93,26 @@ export const checkResult = async function(data, symbol, candlePeriods, dateFrom,
     }
 }
 
-
-// export const outputBacktestSchema = Joi.array().items(Joi.object({
-//     date: Joi.string().required(),
-//     result: Joi.alternatives().try(
-//         Joi.object({
-//             action: Joi.string().required(),
-//             entryPrice: Joi.number().required(),
-//             stopLoss: Joi.number().required(),
-//             takeProfit: Joi.number().required(),
-//             recommendation: Joi.string().required()
-//         }),
-//         Joi.valid(null)
-//     )
-// }));
 export const outputBacktestSchema = Joi.array().items(Joi.object({
-    date: Joi.string().required(),
+    periodData: Joi.number().required(),
+    start: Joi.string().required(),
+    end: Joi.string().required(),
     result: Joi.alternatives().try(
         Joi.object({
             operation: Joi.string().required(),
             entry: Joi.number().required(),
             tp: Joi.number().required(),
-            percent_tp: Joi.number().required(),
+            percent_tp: Joi.number(),
             sl: Joi.number().required(),
-            percent_sl: Joi.number().required(),
+            percent_sl: Joi.number(),
         }),
         Joi.valid(null)
     )
 }));
 // region Utils Func
 
-const extractCorrectTimeframe = (timeframe) => {
-    try {
-        switch (timeframe) {
-            case '1m':
-                return 1;
-            case '5m':
-                return 5;
-            case '15m':
-                return 15;
-            case '1h':
-                return 60;
-            case '4h':
-                return 240;
-            case '1d':
-                return 1440;
-            default:
-                throw Error('Invalid timeframe')
-        }
-    } catch (e) {
-        new Error(e)
-    }
-}
-
 // date is a moment date
-const isTradingTime = (date) => {
+export const isTradingTime = (date) => {
     const dayOfWeek = date.day();
     const hour = date.hour();
 

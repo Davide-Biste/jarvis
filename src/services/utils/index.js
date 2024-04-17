@@ -31,9 +31,8 @@ export const fetchCandlesBeforeDate = async (exchange, symbol, timeframe, endDat
             endTimestamp: moment(endTimestamp).format('YYYY-MM-DD HH:mm:ss'),
             limit
         })
-        console.log({ symbol, timeframe, startTimestamp, limit })
         const ohlcv = await exchange.fetchOHLCV(symbol, timeframe, startTimestamp, limit);
-        console.log({ ohlcv })
+        logger.debug({ ohlcv })
         logger.debug({ primoTimestamp: ohlcv[0][0] })
         if (ohlcv.length > 0 && ohlcv[ohlcv.length - 1][0] <= endTimestamp) {
             return ohlcv;

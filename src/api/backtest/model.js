@@ -52,7 +52,11 @@ const resultSchema = new mongoose.Schema({
     loss: {
         type: Number,
         required: true
-    }
+    },
+    positions: {
+        type: Array,
+        required: true
+    },
 });
 
 const backtestSchema = new mongoose.Schema({

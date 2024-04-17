@@ -29,18 +29,18 @@ agenda.define(AGENDA_JOBS.GET_MARKET_DATA, async (job, done) => {
         if (_.isNil(schedule)) throw new Error('Schedule not found');
         const endDate = moment().startOf('minute').toDate();
         const exchange = new ccxt.currencycom();
-        const fetchedData = await fetchCandlesBeforeDate(exchange, schedule.symbol.symbolPair, schedule.timeframe, endDate, 100);
+        const fetchedData = await fetchCandlesBeforeDate(exchange, schedule.symbol.symbolPair, schedule.timeframe, endDate, schedule.algorithms.candles);
         if (!_.isEmpty(schedule.algorithms)) {
             for (const algo of schedule.algorithms) {
                 // Da capire come gestire più esecuzioni di algoritmi diversi
                 const algoResult = await executeAlgo(fetchedData, algo);
 
                 // Logica per eseguire l'operazione sull'exchange del trader
-                
-                logger.debug(`Algorithm - ${algo.name} - result: ${algoResult} - startDate: ${moment(startDate).format('YYYY-MM-DD HH:mm')}`);
+
+                logger.info(`Algorithm - ${algo.name} - result: ${algoResult} - lastDate: ${moment(endDate).format('YYYY-MM-DD HH:mm')}`);
             }
         } else {
-            logger.error(`Algorithm not found for job - ${job.attrs.name} - startDate: ${moment(startDate).format('YYYY-MM-DD HH:mm')}`);
+            logger.error(`Algorithm not found for job - ${job.attrs.name} - lastDate: ${moment(endDate).format('YYYY-MM-DD HH:mm')}`);
             done();
         }
         done();
@@ -51,6 +51,7 @@ agenda.define(AGENDA_JOBS.GET_MARKET_DATA, async (job, done) => {
         done(error);
     }
 });
+
 
 (async function() {
     if (disable_agenda) {

@@ -22,7 +22,11 @@ const algorithmSchema = new mongoose.Schema({
         required: true,
         enum: ['active', 'inactive'],
         default: 'active'
-    }
+    },
+    candles: {
+        type: Number,
+        required: true,
+    },
 }, { timestamps: true });
 
 export const Algorithm = mongoose.model('Algorithm', algorithmSchema);
