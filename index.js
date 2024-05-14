@@ -8,13 +8,13 @@ import bodyParser from "body-parser";
 import {initPassportStrategies} from "./src/services/strategies/index.js";
 import agenda from "./src/services/agenda/index.js";
 
-await mongooseConnection();
-await initPassportStrategies();
-
-
 if (process.env.LOG_LEVEL === "debug") {
     mongoose.set("debug", true);
 }
+
+await mongooseConnection();
+await initPassportStrategies();
+
 
 const app = express();
 

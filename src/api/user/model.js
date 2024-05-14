@@ -1,7 +1,19 @@
 import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
+import { encryptData } from '../../services/passwordCrypt/cryptToken.js';
 
 const roles = ['user', 'admin'];
+
+const metaApiSchema = new mongoose.Schema({
+    token: {
+        type: String,
+        required: true
+    },
+    accountId: {
+        type: String,
+        required: true
+    }
+});
 
 const userSchema = new mongoose.Schema({
     username: {
@@ -27,12 +39,13 @@ const userSchema = new mongoose.Schema({
         required: true,
         unique: true
     },
-    metaApiToken: {
-        type: String,
+    metaApi: {
+        type: metaApiSchema,
         default: null
-    },
+    }
 }, { timestamps: true });
 
+// password
 userSchema.pre('save', async function(next) { //crypt password before saving
     try {
         if (!this.isModified('password')) return next();
@@ -44,6 +57,7 @@ userSchema.pre('save', async function(next) { //crypt password before saving
 
 })
 
+// username
 userSchema.pre('save', async function(next) {
     try {
         if (!this.isModified('username')) return next();
@@ -56,10 +70,23 @@ userSchema.pre('save', async function(next) {
     }
 })
 
+// metaApi
+userSchema.pre('save', async function(next) {
+    try {
+        if (!this.isModified('metaApi')) return next();
+        const tokenEncrypted = encryptData(this.metaApi.token, process.env.CRYPT_KEY);
+        const accountIdEncrypted = encryptData(this.metaApi.accountId, process.env.CRYPT_KEY);
+        this.metaApi = {
+            token: tokenEncrypted,
+            accountId: accountIdEncrypted
+        }
+    } catch (e) {
+        return next(e);
+    }
+});
 
 userSchema.methods.isValidPassword = async function(password) {
     const user = this;
-    console.log(password)
     return bcrypt.compare(password, user.password);
 }
 

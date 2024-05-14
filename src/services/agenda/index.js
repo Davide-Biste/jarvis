@@ -6,6 +6,9 @@ import { executeAlgo } from '../algo/index.js';
 import { Agenda } from '@hokify/agenda';
 import ccxt from 'ccxt';
 import moment from 'moment';
+import { Subscription } from '../../api/subscription/model.js';
+import { createMarketOperation } from '../meta-api/index.js';
+import { decryptData } from '../passwordCrypt/cryptToken.js';
 
 const agenda = new Agenda({
     db: {
@@ -36,8 +39,19 @@ agenda.define(AGENDA_JOBS.GET_MARKET_DATA, async (job, done) => {
                 const algoResult = await executeAlgo(fetchedData, algo);
 
                 // Logica per eseguire l'operazione sull'exchange del trader
-
                 logger.info(`Algorithm - ${algo.name} - result: ${algoResult} - lastDate: ${moment(endDate).format('YYYY-MM-DD HH:mm')}`);
+                if (algoResult) {
+                    const subscribedUser = await Subscription.find({ algorithm: algo._id }).populate('user');
+                    Promise.resolve(subscribedUser).then(async (users) => {
+                        for (const user of users) {
+                            if (!user.user.metaApi) continue;
+                            const decriptedToken = decryptData(user.user.metaApi.token, process.env.CRYPT_KEY);
+                            const decryptedAccountId = decryptData(user.user.metaApi.accountId, process.env.CRYPT_KEY);
+                            await createMarketOperation(decriptedToken, decryptedAccountId, algoResult);
+                        }
+                    });
+                }
+                done();
             }
         } else {
             logger.error(`Algorithm not found for job - ${job.attrs.name} - lastDate: ${moment(endDate).format('YYYY-MM-DD HH:mm')}`);

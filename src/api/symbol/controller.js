@@ -3,6 +3,20 @@ import logger from '../../services/logger/index.js'
 import ccxt from 'ccxt';
 
 export const actions = {
+    getSymbols: async (req, res) => {
+        try {
+            const { limit, page } = req.query;
+            const symbols = await Symbols.find()
+                .limit(parseInt(limit) || 10)
+                .skip(parseInt(page) || 0)
+                .sort({ createdAt: -1 })
+                .lean();
+            return res.status(200).send(symbols);
+        } catch (e) {
+            logger.error(e);
+            return res.status(500).send({ message: e.message ?? e });
+        }
+    },
     createSymbol: async (req, res) => {
         try {
             const createdSchedule = await Symbols.create(req.body);

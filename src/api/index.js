@@ -7,6 +7,7 @@ import algorithm from './algorithm/index.js';
 import symbol from './symbol/index.js';
 import subscription from './subscription/index.js';
 import backtest from './backtest/index.js';
+import position from './position/index.js';
 
 const router = new Router();
 
@@ -17,5 +18,6 @@ router.use('/algo', algorithm);
 router.use('/symbol', symbol);
 router.use('/subscription', subscription);
 router.use('/backtest', backtest)
+router.use('/positions', position);
 
 export default router;

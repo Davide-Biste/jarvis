@@ -14,14 +14,8 @@ const inputDataSchema = new mongoose.Schema({
         type: String,
         required: true
     },
-    symbolId: {
-        type: Schema.Types.ObjectId,
-        required: true
-    },
-    algorithmId: {
-        type: Schema.Types.ObjectId,
-        required: true
-    }
+    symbolId: { type: mongoose.Schema.Types.ObjectId, ref: 'Symbols', required: true },
+    algorithmId: { type: mongoose.Schema.Types.ObjectId, ref: 'Algorithm', required: true }
 });
 
 const resultSchema = new mongoose.Schema({
@@ -52,11 +46,7 @@ const resultSchema = new mongoose.Schema({
     loss: {
         type: Number,
         required: true
-    },
-    positions: {
-        type: Array,
-        required: true
-    },
+    }
 });
 
 const backtestSchema = new mongoose.Schema({
