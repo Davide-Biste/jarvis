@@ -157,7 +157,7 @@ function extractDataPeriods(data, startDate, candlesPerPeriod) {
 
     // Verifica se la data di inizio è stata trovata
     if (startDateIndex === -1) {
-        throw new Error('La data di inizio non è stata trovata nell\'array di dati');
+        throw new Error(`La data di inizio non è stata trovata nell'array di dati ${moment(startDate)}`);
     }
 
     let startIndex = startDateIndex; // Indice dell'inizio del primo periodo

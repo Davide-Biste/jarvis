@@ -55,6 +55,24 @@ export const actions = {
             return res.status(500).send({ message: e.message ?? e });
         }
     },
+
+    aggregateBacktest: async function({ query, params }, res) {
+        try {
+            const { from, to } = query;
+            const foundAlgo = await Algorithm.findById(params.algoId);
+            if (_.isNil(foundAlgo)) return res.status(404).send({ message: 'Algorithm not found' });
+            if (!from || !to) {
+                const backtests = await Backtest.find({ 'inputData.algorithmId': foundAlgo._id }).lean();
+                if (backtests.length === 0) return res.status(404).send({ message: 'No backtests found' });
+                return res.status(200).send(backtests);
+            } 
+
+            
+        } catch (e) {
+            logger.error(e);
+            return res.status(500).send({ message: e.message ?? e });
+        }
+    },
     getHistoricalData: async function({ query }, res) {
         try {
             let { symbolId, dateFrom, dateTo, timeframe } = query;
