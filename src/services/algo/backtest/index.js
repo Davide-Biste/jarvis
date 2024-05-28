@@ -24,11 +24,7 @@ export const mainFuncForBacktest = async function(data) {
 
     // Determina l'incremento basato sul timeframe
     const increment = {
-        '1m': 1,
-        '15m': 15,
-        '1h': 60,
-        '4h': 240,
-        '1d': 1440
+        '1m': 1, '15m': 15, '1h': 60, '4h': 240, '1d': 1440
     }[timeframe];
 
     if (!increment) {
@@ -52,86 +48,65 @@ export const mainFuncForBacktest = async function(data) {
 export const checkResult = async function(data, symbol, candlePeriods, dateFrom, dateTo, marginDays) {
     try {
         const onlyOpenPositions = data.filter(trade => trade.result !== null);
-        const res = await checkTradeOutcomes(onlyOpenPositions, symbol, dateFrom, dateTo, marginDays);
-        if (res.length === 0) {
-            return {
-                calculateOutcome: {
-                    candlePeriods,
-                    percentageWinningTrades: 0,
-                    percentageLosingTrades: 0,
-                    totalTrades: 0,
-                    profitFactor: 0,
-                    pips: 0,
-                    win: 0,
-                    loss: 0
-                },
-                positions: [],
-            }
-        }
-        let win = 0;
-        let loss = 0;
-        let pips = 0;
-        for (const trade of res) {
-            try {
-                if (trade.outcome === 'Win') {
-                    win++;
-                } else if (trade.outcome === 'Loss') {
-                    loss++;
-                }
-                if (!_.isNil(trade.pips)) {
-                    console.log(trade.pips, 'pips')
-                    pips += parseInt(trade.pips);
-                } else {
-                    logger.debug(`Trade without pips ${trade}`)
-                }
-            } catch (e) {
-                console.log(e, 'pips stronza', trade)
-            }
-        }
-
-        const percentageWinningTrades = (win / (win + loss)) * 100;
-        const percentageLosingTrades = (loss / (win + loss)) * 100;
-        const totalTrades = win + loss;
-        const profitFactor = win / loss;
-        return {
-            calculateOutcome: {
-                candlePeriods,
-                percentageWinningTrades,
-                percentageLosingTrades,
-                totalTrades,
-                profitFactor,
-                pips,
-                win,
-                loss
-            },
-            positions: await Promise.map(res, async trade => {
-                return {
-                    openTimestamp: moment.utc(trade.enterDate).valueOf(),
-                    closeTimestamp: moment.utc(trade.outcomeDate).valueOf(),
-                    entryPrice: trade.entry,
-                    closePrice: trade.closePrice,
-                    result: _.lowerCase(trade.outcome)
-                }
-            })
-        }
+        logger.debug(onlyOpenPositions.length, 'onlyOpenPositions')
+        return await checkTradeOutcomes(onlyOpenPositions, symbol, dateFrom, dateTo, marginDays);
+        // if (res.length === 0) return {
+        //     positions: [],
+        // }
+        // let win = 0;
+        // let loss = 0;
+        // let pips = 0;
+        // for (const trade of res) {
+        //     try {
+        //         if (trade.outcome === 'Win') {
+        //             win++;
+        //         } else if (trade.outcome === 'Loss') {
+        //             loss++;
+        //         }
+        //         if (!_.isNil(trade.pips)) {
+        //             console.log(trade.pips, 'pips')
+        //             pips += parseInt(trade.pips);
+        //         } else {
+        //             logger.debug(`Trade without pips ${trade}`)
+        //         }
+        //     } catch (e) {
+        //         console.log(e, 'pips stronza', trade)
+        //     }
+        // }
+        //
+        // const percentageWinningTrades = (win / (win + loss)) * 100;
+        // const percentageLosingTrades = (loss / (win + loss)) * 100;
+        // const totalTrades = win + loss;
+        // const profitFactor = win / loss;
+        // return {
+        //     positions: await Promise.map(res, async trade => {
+        //         return {
+        //             openTimestamp: moment.utc(trade.enterDate).valueOf(),
+        //             closeTimestamp: moment.utc(trade.outcomeDate).valueOf(),
+        //             entryPrice: trade.entry,
+        //             operation: trade.operation,
+        //             sl: trade.sl,
+        //             tp: trade.tp,
+        //             closePrice: trade.closePrice,
+        //             pips: trade.pips,
+        //             result: _.lowerCase(trade.outcome)
+        //         }
+        //     })
+        // }
     } catch (e) {
         throw new Error(e);
     }
 }
 
 export const outputBacktestSchema = Joi.array().items(Joi.object({
-    timestampOpenPosition: Joi.number().required(),
-    result: Joi.alternatives().try(
-        Joi.object({
-            operation: Joi.string().required() || null,
-            entry: Joi.number().required(),
-            tp: Joi.number().required(),
-            percent_tp: Joi.number(),
-            sl: Joi.number().required(),
-            percent_sl: Joi.number(),
-        }),
-        Joi.valid(null)
-    )
+    timestampOpenPosition: Joi.number().required(), result: Joi.alternatives().try(Joi.object({
+        operation: Joi.string().required() || null,
+        entry: Joi.number().required(),
+        tp: Joi.number().required(),
+        percent_tp: Joi.number(),
+        sl: Joi.number().required(),
+        percent_sl: Joi.number(),
+    }), Joi.valid(null))
 }));
 // region Utils Func
 
@@ -232,28 +207,23 @@ async function checkTradeOutcomes(trades, symbol, dateFrom, dateTo, marginDays) 
                 results.push({
                     operation,
                     outcome,
-                    enterDate: moment(timestampOpenPosition).utc().format('YYYY-MM-DD HH:mm'),
-                    outcomeDate: moment(outcomeDate).utc().format('YYYY-MM-DD HH:mm'),
-                    entry,
+                    openTimestamp: moment.utc(timestampOpenPosition).valueOf(),
+                    closeTimestamp: moment.utc(outcomeDate).valueOf(),
+                    entryPrice: entry,
                     closePrice,
                     sl,
                     tp,
                     pips: outcome === 'No Outcome' ? null : parseFloat(pips).toFixed(2),
-                    details: outcome === 'No Outcome'
-                        ? 'Neither stop loss nor take profit was reached within the available data.'
-                        : `The trade reached ${outcome} at ${moment(outcomeDate).utc().format('YYYY-MM-DD HH:mm')} with a close price of ${closePrice}, resulting in ${pips.toFixed(2)} pips.`
                 });
             } else {
                 results.push({
-                    timestampOpenPosition,
-                    error: 'Failed to find the closing date in historical data.'
+                    timestampOpenPosition, error: 'Failed to find the closing date in historical data.'
                 });
             }
         } catch (error) {
             console.error(`Error fetching data for ${timestampOpenPosition}: ${error.message}`);
             results.push({
-                timestampOpenPosition,
-                error: `Failed to fetch or process data: ${error.message}`
+                timestampOpenPosition, error: `Failed to fetch or process data: ${error.message}`
             });
         }
     }
@@ -281,15 +251,9 @@ const getHistoricalRatesWithBuffer = async (symbol, from, to, timeframe, format,
         const toWithBuffer = moment(to).add(1 * timeframeInMilliseconds, 'milliseconds').utc();
 
         const dataWithBuffer = await getHistoricalRates({
-            instrument: symbol.symbolPair ? _.split(symbol.symbolPair, '/').join('').toLowerCase() : symbol,
-            dates: {
-                from: fromWithBuffer.toDate(),
-                to: toWithBuffer.toDate()
-            },
-            ignoreFlats: true,
-            timeframe: convertTimeFrameForDukascopy(timeframe),
-            format,
-            useCache: true,
+            instrument: symbol.symbolPair ? _.split(symbol.symbolPair, '/').join('').toLowerCase() : symbol, dates: {
+                from: fromWithBuffer.toDate(), to: toWithBuffer.toDate()
+            }, ignoreFlats: true, timeframe: convertTimeFrameForDukascopy(timeframe), format, useCache: true,
         });
 
         logger.debug({

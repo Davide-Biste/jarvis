@@ -6,13 +6,14 @@ import _ from 'lodash';
 
 const { Promise } = pkg;
 
-export async function savePositions(positions, backtestId, timeframe) {
+export async function savePositions(positions, symbolId, algoId, timeframe) {
     try {
         const formattedPositions = _.map(positions, pos => {
             if (pos.result !== 'no outcome') {
                 return {
                     ...pos,
-                    backtestId: backtestId,
+                    symbolId: symbolId,
+                    algoId: algoId,
                     timeframe: timeframe,
                 }
             }
@@ -21,13 +22,18 @@ export async function savePositions(positions, backtestId, timeframe) {
         const bulkOps = filteredPositions.map(pos => ({
             updateOne: {
                 filter: {
-                    backtestId: pos.backtestId,
                     timeframe: pos.timeframe,
+                    symbolId: symbolId,
+                    algoId: algoId,
+                    operation: pos.operation,
+                    outcome: pos.outcome,
                     openTimestamp: pos.openTimestamp,
                     closeTimestamp: pos.closeTimestamp,
                     entryPrice: pos.entryPrice,
                     closePrice: pos.closePrice,
-                    result: pos.result
+                    sl: pos.sl,
+                    tp: pos.tp,
+                    pips: pos.pips,
                 },
                 update: pos,
                 upsert: true
