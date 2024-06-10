@@ -24,7 +24,7 @@ export const mainFuncForBacktest = async function(data) {
 
     // Determina l'incremento basato sul timeframe
     const increment = {
-        '1m': 1, '15m': 15, '1h': 60, '4h': 240, '1d': 1440
+        '1m': 1, '5m': 5, '15m': 15, '1h': 60, '4h': 240, '1d': 1440
     }[timeframe];
 
     if (!increment) {
@@ -33,6 +33,7 @@ export const mainFuncForBacktest = async function(data) {
     const dataPeriods = extractDataPeriods(historicalData, dateFrom, candlePeriods);
     dataPeriods.shift()
     const results = [];
+    let index = 0;
     for (const periodData of dataPeriods) {
         const result = await executeAlgo(periodData, algorithm);
         results.push({
@@ -41,6 +42,7 @@ export const mainFuncForBacktest = async function(data) {
             // close: periodData[periodData.length - 1].close,
             result,
         });
+        index++;
     }
     return results;
 }
@@ -48,8 +50,9 @@ export const mainFuncForBacktest = async function(data) {
 export const checkResult = async function(data, symbol, candlePeriods, dateFrom, dateTo, marginDays) {
     try {
         const onlyOpenPositions = data.filter(trade => trade.result !== null);
-        logger.debug(onlyOpenPositions.length, 'onlyOpenPositions')
-        return await checkTradeOutcomes(onlyOpenPositions, symbol, dateFrom, dateTo, marginDays);
+        logger.debug(`'onlyOpenPositions': ${onlyOpenPositions.length}`)
+        const checkedTradeOutcomes = await checkTradeOutcomes(onlyOpenPositions, symbol, dateFrom, dateTo, marginDays);
+        return checkedTradeOutcomes;
         // if (res.length === 0) return {
         //     positions: [],
         // }
@@ -175,6 +178,13 @@ async function checkTradeOutcomes(trades, symbol, dateFrom, dateTo, marginDays) 
                     try {
                         const { timestamp, open, high, low, close, volume } = futureData[i];
 
+
+                        //Check validity of the trade
+                        if (operation === 'buy' && entry <= sl || operation === 'sell' && entry >= sl) {
+                            logger.debug(`Invalid trade: ${entry} >= ${sl} with ${operation} operation`);
+                            break;
+                        }
+
                         if (operation === 'buy' && high >= tp) {
                             outcome = 'Win';
                             outcomeDate = timestamp;
@@ -237,6 +247,7 @@ const getHistoricalRatesWithBuffer = async (symbol, from, to, timeframe, format,
         //Ho un numero di candele che mi interessano, bene, prendo e moltiplico per due per stare largo
         const timeframeInMilliseconds = {
             '1m': 60000,              // 1 minuto in millisecondi
+            '5m': 300000,             // 5 minuti in millisecondi
             '15m': 900000,            // 15 minuti in millisecondi
             '1h': 3600000,            // 1 ora in millisecondi
             '4h': 14400000,           // 4 ore in millisecondi
@@ -251,9 +262,14 @@ const getHistoricalRatesWithBuffer = async (symbol, from, to, timeframe, format,
         const toWithBuffer = moment(to).add(1 * timeframeInMilliseconds, 'milliseconds').utc();
 
         const dataWithBuffer = await getHistoricalRates({
-            instrument: symbol.symbolPair ? _.split(symbol.symbolPair, '/').join('').toLowerCase() : symbol, dates: {
+            instrument: symbol.symbolPair ? _.split(symbol.symbolPair, '/').join('').toLowerCase() : symbol,
+            dates: {
                 from: fromWithBuffer.toDate(), to: toWithBuffer.toDate()
-            }, ignoreFlats: true, timeframe: convertTimeFrameForDukascopy(timeframe), format, useCache: true,
+            },
+            ignoreFlats: true,
+            timeframe: convertTimeFrameForDukascopy(timeframe),
+            format,
+            useCache: true
         });
 
         logger.debug({
@@ -270,6 +286,8 @@ export const convertTimeFrameForDukascopy = (timeframe) => {
     switch (timeframe) {
         case '1m':
             return 'm1';
+        case '5m':
+            return 'm5';
         case '15m':
             return 'm15';
         case '1h':

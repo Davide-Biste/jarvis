@@ -9,7 +9,7 @@ const { Promise } = pkg;
 export async function savePositions(positions, symbolId, algoId, timeframe) {
     try {
         const formattedPositions = _.map(positions, pos => {
-            if (pos.result !== 'no outcome') {
+            if (pos.outcome !== 'No Outcome') {
                 return {
                     ...pos,
                     symbolId: symbolId,
@@ -46,11 +46,9 @@ export async function savePositions(positions, symbolId, algoId, timeframe) {
         } else {
             console.log('Nessuna nuova posizione da inserire.');
         }
+        return positions;
     } catch (error) {
-        await Backtest.findByIdAndUpdate(backtestId, {
-            status: 'error',
-            statusMessage: 'Errore durante il salvataggio delle posizioni'
-        });
+        throw new Error(error);
         logger.error('Errore durante il salvataggio delle posizioni:', error);
     }
 }

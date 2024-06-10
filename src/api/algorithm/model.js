@@ -1,5 +1,7 @@
 import mongoose, { Schema } from 'mongoose';
 
+const closingPositionMethod = ['tpsl', 'manual', 'oppositeSignal']
+
 const algorithmSchema = new mongoose.Schema({
     name: {
         type: String,
@@ -27,6 +29,12 @@ const algorithmSchema = new mongoose.Schema({
         type: Number,
         required: true,
     },
+    methodOfClosingPosition: {
+        type: String,
+        required: true,
+        enum: closingPositionMethod,
+        default: 'tpsl'
+    }
 }, { timestamps: true });
 
 export const Algorithm = mongoose.model('Algorithm', algorithmSchema);

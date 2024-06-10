@@ -10,6 +10,7 @@ import {
 import { Algorithm } from '../algorithm/model.js';
 import { Backtest } from '../backtest/model.js';
 import { savePositions } from '../backtest/utils/index.js';
+import { jarvisBacktest } from '../../services/micro-services/jarvis-backtest.js';
 
 
 export const actions = {
@@ -18,6 +19,7 @@ export const actions = {
             const { dateFrom, dateTo } = query;
             const { algoId, symbolId, timeframe } = body;
             if (!dateFrom || !dateTo) return res.status(400).send({ message: 'Missing parameters' });
+
             const dateFromToUse = moment(dateFrom).utc();
             const dateToToUse = moment(dateTo).utc();
             if (!dateFromToUse.isValid() || !dateToToUse.isValid()) return res.status(400).send({ message: 'Invalid date format' });
@@ -30,58 +32,153 @@ export const actions = {
             const foundSymbol = await Symbols.findById(symbolId).lean();
             if (_.isNil(foundSymbol)) return res.status(400).send({ message: 'Symbol not found' });
 
-            const positions = await Position.aggregate([{
-                $match: {
-                    openTimestamp: { $gte: dateFromToUse.toDate(), $lte: dateToToUse.toDate() },
-                    closeTimestamp: { $gte: dateFromToUse.toDate(), $lte: dateToToUse.toDate() },
-                    algoId: foundAlgo._id,
-                    symbolId: foundSymbol._id,
-                    timeframe: timeframe
+            // Aggregate positions
+            const positions = await Position.aggregate([
+                {
+                    $match: {
+                        openTimestamp: {
+                            $gte: dateFromToUse.toDate(),
+                            $lte: dateToToUse.toDate()
+                        },
+                        algoId: foundAlgo._id,
+                        symbolId: foundSymbol._id,
+                        timeframe: timeframe
+                    }
+                },
+                {
+                    $facet: {
+                        metrics: [
+                            {
+                                $group: {
+                                    _id: null,
+                                    totalPips: { $sum: '$pips' },
+                                    totalWins: { $sum: { $cond: [{ $eq: ['$outcome', 'Win'] }, 1, 0] } },
+                                    totalLosses: { $sum: { $cond: [{ $eq: ['$outcome', 'Loss'] }, 1, 0] } },
+                                    totalPositions: { $sum: 1 },
+                                    avgPips: { $avg: '$pips' },
+                                    avgWinPips: { $avg: { $cond: [{ $eq: ['$outcome', 'Win'] }, '$pips', null] } },
+                                    avgLossPips: { $avg: { $cond: [{ $eq: ['$outcome', 'Loss'] }, '$pips', null] } },
+                                    maxWinPips: { $max: { $cond: [{ $eq: ['$outcome', 'Win'] }, '$pips', null] } },
+                                    maxLossPips: { $max: { $cond: [{ $eq: ['$outcome', 'Loss'] }, '$pips', null] } },
+                                    algoId: { $first: '$algoId' },
+                                    symbolId: { $first: '$symbolId' },
+                                    timeframe: { $first: '$timeframe' }
+                                }
+                            },
+                            {
+                                $project: {
+                                    _id: 0,
+                                    totalPips: 1,
+                                    totalWins: 1,
+                                    totalLosses: 1,
+                                    totalPositions: 1,
+                                    winPercentage: { $multiply: [{ $divide: ['$totalWins', '$totalPositions'] }, 100] },
+                                    lossPercentage: { $multiply: [{ $divide: ['$totalLosses', '$totalPositions'] }, 100] },
+                                    avgPips: 1,
+                                    avgWinPips: 1,
+                                    avgLossPips: 1,
+                                    maxWinPips: 1,
+                                    maxLossPips: 1,
+                                    algoId: 1,
+                                    symbolId: 1,
+                                    timeframe: 1,
+                                    dateFrom: { $literal: dateFromToUse.toDate() },
+                                    dateTo: { $literal: dateToToUse.toDate() }
+                                }
+                            }
+                        ],
+                        concurrency: [
+                            {
+                                $project: {
+                                    timestamps: {
+                                        $concatArrays: [
+                                            [{ time: '$openTimestamp', type: 'open' }],
+                                            [{ time: '$closeTimestamp', type: 'close' }]
+                                        ]
+                                    }
+                                }
+                            },
+                            { $unwind: '$timestamps' },
+                            { $sort: { 'timestamps.time': 1 } },
+                            {
+                                $group: {
+                                    _id: null,
+                                    concurrencyData: {
+                                        $push: {
+                                            timestamp: '$timestamps.time',
+                                            type: '$timestamps.type'
+                                        }
+                                    },
+                                    firstOpen: { $first: { time: '$openTimestamp', id: '$_id' } },
+                                    lastClose: { $last: { time: '$closeTimestamp', id: '$_id' } }
+                                }
+                            },
+                            {
+                                $project: {
+                                    _id: 0,
+                                    concurrencyData: 1,
+                                    firstOpen: 1,
+                                    lastClose: 1
+                                }
+                            }
+                        ],
+                        firstPosition: [{ $sort: { openTimestamp: 1 } }, { $limit: 1 }],
+                        lastPosition: [{ $sort: { openTimestamp: -1 } }, { $limit: 1 }]
+                    }
+                },
+                {
+                    $project: {
+                        metrics: { $arrayElemAt: ['$metrics', 0] },
+                        concurrency: { $arrayElemAt: ['$concurrency', 0] },
+                        firstPosition: { $arrayElemAt: ['$firstPosition', 0] },
+                        lastPosition: { $arrayElemAt: ['$lastPosition', 0] }
+                    }
                 }
-            }, {
-                $group: {
-                    _id: null,
-                    totalPips: { $sum: '$pips' },
-                    totalWins: { $sum: { $cond: [{ $eq: ['$outcome', 'Win'] }, 1, 0] } },
-                    totalLosses: { $sum: { $cond: [{ $eq: ['$outcome', 'Loss'] }, 1, 0] } },
-                    totalPositions: { $sum: 1 },
-                    avgPips: { $avg: '$pips' },
-                    avgWinPips: { $avg: { $cond: [{ $eq: ['$outcome', 'Win'] }, '$pips', null] } },
-                    avgLossPips: { $avg: { $cond: [{ $eq: ['$outcome', 'Loss'] }, '$pips', null] } },
-                    maxWinPips: { $max: { $cond: [{ $eq: ['$outcome', 'Win'] }, '$pips', null] } },
-                    maxLossPips: { $max: { $cond: [{ $eq: ['$outcome', 'Loss'] }, '$pips', null] } },
-                    algoId: { $first: '$algoId' }, // assuming algoId is the same for all positions in the range
-                    symbolId: { $first: '$symbolId' }, // assuming symbolId is the same for all positions in the range
-                    timeframe: { $first: '$timeframe' }
+            ]);
+
+            if (!positions.length || !positions[0].metrics) {
+                return res.status(200).send({
+                    message: 'No positions found',
+                    dateFrom: dateFromToUse.toDate(),
+                    dateTo: dateToToUse.toDate()
+                });
+            }
+            // Calculate concurrency metrics
+            const concurrencyData = positions[0].concurrency?.concurrencyData || [];
+            let currentOpen = 0;
+            let maxOpen = 0;
+            let totalOpen = 0;
+            let count = 0;
+
+            concurrencyData.forEach(event => {
+                if (event.type === 'open') {
+                    currentOpen++;
+                    if (currentOpen > maxOpen) maxOpen = currentOpen;
+                } else {
+                    currentOpen--;
                 }
-            }, {
-                $project: {
-                    _id: 0,
-                    totalPips: 1,
-                    totalWins: 1,
-                    totalLosses: 1,
-                    totalPositions: 1,
-                    winPercentage: { $multiply: [{ $divide: ['$totalWins', '$totalPositions'] }, 100] },
-                    lossPercentage: { $multiply: [{ $divide: ['$totalLosses', '$totalPositions'] }, 100] },
-                    avgPips: 1,
-                    avgWinPips: 1,
-                    avgLossPips: 1,
-                    maxWinPips: 1,
-                    maxLossPips: 1,
-                    algoId: 1,
-                    symbolId: 1,
-                    timeframe: 1,
-                    dateFrom: { $literal: dateFromToUse.toDate() },
-                    dateTo: { $literal: dateToToUse.toDate() }
-                }
-            }]);
-            if (!positions.length) return res.status(200).send({});
+                totalOpen += currentOpen;
+                count++;
+            });
+
+            const avgOpen = totalOpen / count;
+
+            // Add concurrency metrics to the final result
+            const result = {
+                ...positions[0].metrics,
+                avgOpen: avgOpen,
+                maxOpen: maxOpen,
+                firstPosition: positions[0].firstPosition,
+                lastPosition: positions[0].lastPosition,
+                firstOpen: positions[0].concurrency?.firstOpen,
+                lastClose: positions[0].concurrency?.lastClose
+            };
 
             // Populate algoId and symbolId
-            const populatedData = await Position.populate(positions[0], [
+            const populatedData = await Position.populate(result, [
                 { path: 'algoId', model: 'Algorithm' },
                 { path: 'symbolId', model: 'Symbols' }
-            ])
+            ]);
 
             return res.status(200).send(populatedData);
         } catch (e) {
@@ -109,7 +206,8 @@ export const actions = {
             logger.error(e);
             return res.status(500).send({ message: e.message ?? e });
         }
-    }, getHistoricalData: async function({ query }, res) {
+    },
+    getHistoricalData: async function({ query }, res) {
         try {
             let { symbolId, dateFrom, dateTo, timeframe } = query;
             if (!dateFrom || !dateTo || !timeframe || !symbolId) return res.status(400).send({ message: 'Missing parameters' });
@@ -132,9 +230,9 @@ export const actions = {
             logger.error(e);
             return res.status(500).send({ message: e.message ?? e });
         }
-    }, createBacktest: async function({ params, body }, res) {
+    },
+    createBacktest: async function({ params, body }, res) {
         try {
-
             const { timeframe, symbolId, algorithmId } = body;
             const dateFrom = moment(body.dateFrom).utc();
             const dateTo = moment(body.dateTo).utc();
@@ -148,28 +246,26 @@ export const actions = {
             if (dateFrom.isSame(dateTo)) return res.status(400).send({ message: 'dateFrom and dateTo must be different' });
             const symbolToUse = await Symbols.findById(symbolId, 'symbolPair').lean();
             if (_.isNil(symbolToUse)) return res.status(400).send({ message: 'Symbol not found' });
-            const algorithmToUse = await Algorithm.findById(algorithmId, 'script language candles').lean();
+            const algorithmToUse = await Algorithm.findById(algorithmId, 'script language candles methodOfClosingPosition').lean();
             if (_.isNil(algorithmToUse)) return res.status(400).send({ message: 'Algorithm not found' });
 
-            Promise.resolve(mainFuncForBacktest({
-                dateFrom,
-                dateTo,
+
+            const { data: backtestResult } = await jarvisBacktest.post('/backtests/run', {
+                dateFrom: dateFrom.format('YYYY-MM-DD'),
+                dateTo: dateTo.format('YYYY-MM-DD'),
                 timeframe,
-                symbol: symbolToUse,
-                algorithm: algorithmToUse,
-                candlePeriods: algorithmToUse.candles,
-            }))
-                .then(async result => {
-                    if (result.length === 0) throw new Error('No result found');
-                    const resultValidate = outputBacktestSchema.validate(result);
-                    if (resultValidate.error) throw new Error('Invalid output schema');
-                    const positions = await checkResult(result, symbolToUse, algorithmToUse.candles, dateFrom, dateTo, 3);
-                    await savePositions(positions, symbolToUse._id, algorithmToUse._id, timeframe);
-                })
-                .catch(async error => {
-                    logger.error(`Errore durante il backtest: ${error}`);
-                });
-            return res.status(201).send({ message: 'Backtest created successfully' });
+                methodOfClosingPosition: algorithmToUse.methodOfClosingPosition,
+                algoType: algorithmToUse.language,
+                symbol: symbolToUse.symbolPair,
+                algorithm: algorithmToUse.script,
+                candles: algorithmToUse.candles,
+            });
+            const positionsSaved = await savePositions(backtestResult, symbolToUse._id, algorithmToUse._id, timeframe);
+
+            return res.status(201).send({
+                message: `Backtest created successfully ${positionsSaved.length === 0 ? 'nessuna nuova posizione da inserire' : ''}`,
+                data: positionsSaved
+            });
         } catch (error) {
             logger.error(error);
             return res.status(500).send({ message: error.message ?? error });
